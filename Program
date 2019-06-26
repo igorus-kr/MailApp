@@ -1,0 +1,125 @@
+using Limilabs.Client.IMAP;
+using Limilabs.Mail;
+using Limilabs.Mail.MIME;
+using Program.Lib;
+using System;
+using System.Collections.Generic;
+using System.Data.Linq;
+using System.IO;
+using System.Linq;
+
+namespace MailApp
+{
+    class Program
+    {
+        static string attachmentName;  //Имя и путь к вложению
+        static void Main(string[] args)
+        {
+            
+            using (Imap imap = new Imap())
+            {   
+                //Подключаемся к почте
+                imap.ConnectSSL("imap.gmail.com");                          
+                imap.Login("apasnii228xxx99@gmail.com", "kertortaf");
+
+                imap.SelectInbox();
+
+                //Получаем идентификаторы всех писем и преобразуем их
+                List<long> uids = imap.Search(Flag.All);
+                if (uids.Count == 0) Console.WriteLine("У Вас нет писем");
+                else
+                {
+                    foreach (long uid in uids)
+                    {
+                        byte[] eml = imap.GetMessageByUID(uid);
+                        IMail email = new MailBuilder().CreateFromEml(eml);
+                                                
+                        foreach(MimeData attachment in email.Attachments)
+                        {
+                            //Скачиваем все вложения формата .csv
+                            if (attachment.FileName.EndsWith(".csv"))
+                            {
+                                Console.WriteLine(attachment.FileName);
+                                attachmentName = "C:\\Users\\igoru\\Desktop\\Оперативная папка\\Аис Роботикс\\Attachments\\" + attachment.FileName;
+                                attachment.Save(attachmentName);
+                                
+                            }
+                        }
+                    }
+                }
+                
+                imap.Close();
+            }
+
+            #region Запись в БД
+            string connectionString = @"Data Source=.\SQLEXPRESS;Initial Catalog=PriceItemsDB;Integrated Security=True";
+            DataContext db = new DataContext(connectionString);
+
+            //Считываем файл и записываем в массив строк, где первая строка -- название колонн
+            string[] priceRows = File.ReadAllLines(attachmentName);
+            string[] columnNames = priceRows[0].Split(';');
+            List<PriceItem> addingPriceItems = new List<PriceItem>();
+            
+            //В остальных строках записываем нужные колонны и формируем список на добавление 
+            for(int i = 1; i < priceRows.Length; i++)
+            {
+                PriceItem tempItem = new PriceItem();
+                string[] tempColumns = priceRows[i].Split(';');
+                if (!String.IsNullOrEmpty(priceRows[i]))
+                {
+                        for(int j = 0; j < columnNames.Length; j++)
+                        {
+                            switch (columnNames[j])
+                            {
+                            case "Бренд":
+                                tempItem.Vendor = tempColumns[j];
+                                break;
+                            case "Каталожный номер":
+                                tempItem.Number = tempColumns[j];
+                                break;
+                            case "Описание":
+                                tempItem.Description = tempColumns[j];
+                                break;
+                            case "Цена, руб.":
+                                tempItem.Price = Parsers.PriceParser(tempColumns[j]);
+                                break;
+                            case "Наличие":
+                                tempItem.Count = Parsers.CountParser(tempColumns[j]);
+                                break;
+                            default:
+                                continue;
+                            }
+                        }
+
+                    if (tempItem.Price == (decimal)-1.0) continue;
+
+                    tempItem.SearchVendor = Parsers.ToUpperAlphaNumeric(tempItem.Vendor);
+                    tempItem.SearchNumber = Parsers.ToUpperAlphaNumeric(tempItem.Number);
+
+                    //Проверка на совпадение записей в таблице
+                    var e = (from p in db.GetTable<PriceItem>()                         
+                             where p.Number == tempItem.Number &&
+                                   p.Vendor == tempItem.Vendor &&
+                                   p.Price == tempItem.Price &&
+                                   p.Count == tempItem.Count &&
+                                   p.Description == tempItem.Description
+                             select p);
+                    
+                    if (e.Count() == 0)
+                        addingPriceItems.Add(tempItem);
+                }
+            }
+
+            //Добавляем записи и удаляем файл
+            db.GetTable<PriceItem>().InsertAllOnSubmit(addingPriceItems);
+            db.SubmitChanges();
+            File.Delete(attachmentName);
+            #endregion
+            Console.WriteLine("Вложения записаны");
+            Console.ReadLine();
+        }
+
+    }
+
+
+}
