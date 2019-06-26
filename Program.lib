@@ -1,0 +1,68 @@
+using System;
+using System.Data.Linq.Mapping;
+
+namespace Program.Lib
+{
+    [Table(Name = "PriceItems")]
+    public class PriceItem
+    {
+        [Column(IsPrimaryKey = true, IsDbGenerated = true)]
+        public int ID { get; set; }
+        [Column]
+        public string Vendor { get; set; }
+        [Column]
+        public string Number { get; set; }
+        [Column]
+        public string SearchVendor { get; set; }
+        [Column]
+        public string SearchNumber { get; set; }
+        [Column]
+        public string Description { get; set; }
+        [Column]
+        public decimal Price { get; set; }
+        [Column]
+        public int Count { get; set; }
+    }
+
+    public static class Parsers
+    {
+        public static string ToUpperAlphaNumeric(string str)
+        {
+            char[] arr = str.ToCharArray();
+            arr = Array.FindAll(arr, c => char.IsLetterOrDigit(c));
+            str = new string(arr).ToUpper();
+            return str;
+        }
+
+        public static int CountParser(string str)
+        {
+            char[] arr = str.ToCharArray();
+            char sym = Array.Find(arr, (c => (c == '>' || c == '<' || c == '-')));
+            switch (sym)
+            {
+                case '>':
+                    int i = str.IndexOf('>');
+                    str = str.Substring(i + 1);
+                    break;
+                case '<':
+                    i = str.IndexOf('<');
+                    str = str.Substring(i + 1);
+                    break;
+                case '-':
+                    i = str.IndexOf('-');
+                    str = str.Substring(i + 1);
+                    break;
+                default:
+                    return Int32.Parse(str);
+            }
+            return Int32.Parse(str);
+        }
+
+        public static decimal PriceParser(string str)
+        {
+            if (Decimal.TryParse(str, out decimal result))
+                return result;
+            else return (decimal)-1.0;
+        }
+    }
+}
